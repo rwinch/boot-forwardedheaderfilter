@@ -35,7 +35,7 @@ public class RestTemplateTests {
 	@Test
 	public void locationXForwardedLogin() throws Exception {
 		ResponseEntity<String> result = redirectWithXForwardedTo("/login");
-		assertThat(result).hasRedirectOf("https://localhost/login");
+		assertThat(result).hasRedirectOf("https://example.com/login");
 	}
 
 	@Test
@@ -86,7 +86,7 @@ public class RestTemplateTests {
 		MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
 		map.add("l", to);
 		URI uri = new URI("http://localhost:" + port + "/redirect");
-		ResponseEntity<String> result = rest.exchange(RequestEntity.post(uri).header("X-Forwarded-Proto", "https").header("X-Forwarded-Port", "443").body(map), String.class);
+		ResponseEntity<String> result = rest.exchange(RequestEntity.post(uri).header("X-Forwarded-Proto", "https").header("x-forwarded-host", "example.com").header("X-Forwarded-Port", "443").body(map), String.class);
 		return result;
 	}
 
