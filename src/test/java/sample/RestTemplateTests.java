@@ -1,5 +1,7 @@
 package sample;
 
+import java.net.URI;
+
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.junit.Test;
@@ -9,6 +11,7 @@ import org.springframework.boot.context.embedded.LocalServerPort;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.http.RequestEntity;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.junit4.SpringRunner;
 import org.springframework.util.LinkedMultiValueMap;
@@ -27,6 +30,12 @@ public class RestTemplateTests {
 	public void locationLogin() throws Exception {
 		ResponseEntity<String> result = locationTo("/login");
 		assertThat(result).hasRedirectOf("/login");
+	}
+
+	@Test
+	public void locationXForwardedLogin() throws Exception {
+		ResponseEntity<String> result = redirectWithXForwardedTo("/login");
+		assertThat(result).hasRedirectOf("https://localhost/login");
 	}
 
 	@Test
@@ -71,6 +80,14 @@ public class RestTemplateTests {
 		redirectUrl += "/parent";
 		ResponseEntity<String> result = redirectTo("../foo");
 		assertThat(result).hasLocalRedirectOf("/foo");
+	}
+
+	private ResponseEntity<String> redirectWithXForwardedTo(String to) throws Exception {
+		MultiValueMap<String, String> map = new LinkedMultiValueMap<String, String>();
+		map.add("l", to);
+		URI uri = new URI("http://localhost:" + port + "/redirect");
+		ResponseEntity<String> result = rest.exchange(RequestEntity.post(uri).header("X-Forwarded-Proto", "https").header("X-Forwarded-Port", "443").body(map), String.class);
+		return result;
 	}
 
 	private ResponseEntity<String> locationTo(String to) {
