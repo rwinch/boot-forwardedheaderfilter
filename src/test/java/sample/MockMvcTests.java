@@ -15,7 +15,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @RunWith(SpringRunner.class)
 @SpringBootTest
 @AutoConfigureMockMvc
-public class BootForwardedheaderfilterApplicationTests {
+public class MockMvcTests {
 	@Autowired
 	MockMvc mockMvc;
 

@@ -41,22 +41,25 @@ import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UrlPathHelper;
 
 /**
- * Filter that wraps the request in order to override its
+ * Filter that wraps the request and response in order to override its
  * {@link HttpServletRequest#getServerName() getServerName()},
  * {@link HttpServletRequest#getServerPort() getServerPort()},
- * {@link HttpServletRequest#getScheme() getScheme()}, and
- * {@link HttpServletRequest#isSecure() isSecure()} methods with values derived
- * from "Forwarded" or "X-Forwarded-*" headers. In effect the wrapped request
- * reflects the client-originated protocol and address.
+ * {@link HttpServletRequest#getScheme() getScheme()},
+ * {@link HttpServletRequest#isSecure() isSecure()},
+ * {@link HttpServletResponse#sendRedirect(String) sendRedirect(String)},
+ * methods with values derived from "Forwarded" or "X-Forwarded-*"
+ * headers. In effect the wrapped request and response reflects the
+ * client-originated protocol and address.
  *
  * @author Rossen Stoyanchev
  * @author Eddú Meléndez
+ * @author Rob Winch
  * @since 4.3
  */
 public class ForwardedHeaderFilter extends OncePerRequestFilter {
 
 	private static final Set<String> FORWARDED_HEADER_NAMES =
-			Collections.newSetFromMap(new LinkedCaseInsensitiveMap<Boolean>(5, Locale.ENGLISH));
+			Collections.newSetFromMap(new LinkedCaseInsensitiveMap<>(5, Locale.ENGLISH));
 
 	static {
 		FORWARDED_HEADER_NAMES.add("Forwarded");
@@ -96,26 +99,9 @@ public class ForwardedHeaderFilter extends OncePerRequestFilter {
 	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
 			FilterChain filterChain) throws ServletException, IOException {
 
-		filterChain.doFilter(new ForwardedHeaderRequestWrapper(request, this.pathHelper), new ForwardedHeaderResponseWrapper(response, request));
-	}
-
-	private static class ForwardedHeaderResponseWrapper extends HttpServletResponseWrapper {
-		private final HttpServletRequest request;
-
-		public ForwardedHeaderResponseWrapper(HttpServletResponse response, HttpServletRequest request) {
-			super(response);
-			this.request = request;
-		}
-
-		@Override
-		public void sendRedirect(String location) throws IOException {
-			HttpRequest httpRequest = new ServletServerHttpRequest(request);
-			UriComponents uriComponents = UriComponentsBuilder
-					.fromHttpRequest(httpRequest)
-					.replacePath(location)
-					.build();
-			super.sendRedirect(uriComponents.toUriString());
-		}
+		ForwardedHeaderRequestWrapper wrappedRequest = new ForwardedHeaderRequestWrapper(request, this.pathHelper);
+		ForwardedHeaderResponseWrapper wrappedResponse = new ForwardedHeaderResponseWrapper(response, wrappedRequest);
+		filterChain.doFilter(wrappedRequest, wrappedResponse);
 	}
 
 
@@ -178,7 +164,7 @@ public class ForwardedHeaderFilter extends OncePerRequestFilter {
 		 * Copy the headers excluding any {@link #FORWARDED_HEADER_NAMES}.
 		 */
 		private static Map<String, List<String>> initHeaders(HttpServletRequest request) {
-			Map<String, List<String>> headers = new LinkedCaseInsensitiveMap<List<String>>(Locale.ENGLISH);
+			Map<String, List<String>> headers = new LinkedCaseInsensitiveMap<>(Locale.ENGLISH);
 			Enumeration<String> names = request.getHeaderNames();
 			while (names.hasMoreElements()) {
 				String name = names.nextElement();
@@ -235,7 +221,7 @@ public class ForwardedHeaderFilter extends OncePerRequestFilter {
 		@Override
 		public Enumeration<String> getHeaders(String name) {
 			List<String> value = this.headers.get(name);
-			return (Collections.enumeration(value != null ? value : Collections.<String>emptySet()));
+			return (Collections.enumeration(value != null ? value : Collections.emptySet()));
 		}
 
 		@Override
@@ -244,4 +230,58 @@ public class ForwardedHeaderFilter extends OncePerRequestFilter {
 		}
 	}
 
+	private static class ForwardedHeaderResponseWrapper extends HttpServletResponseWrapper {
+		private static final String FOLDER_SEPARATOR = "/";
+
+		private final HttpServletRequest request;
+
+		public ForwardedHeaderResponseWrapper(HttpServletResponse response, HttpServletRequest request) {
+			super(response);
+			this.request = request;
+		}
+
+		@Override
+		public void sendRedirect(String location) throws IOException {
+			String forwardedLocation = forwardedLocation(location);
+
+			super.sendRedirect(forwardedLocation);
+		}
+
+		private String forwardedLocation(String location) {
+			if(hasScheme(location)) {
+				return location;
+			}
+
+			return createForwardedLocation(location);
+		}
+
+		private String createForwardedLocation(String location) {
+			boolean isNetworkPathReference = location.startsWith("//");
+			if(isNetworkPathReference) {
+				UriComponentsBuilder schemeForwardedLocation = UriComponentsBuilder.fromUriString(location).scheme(request.getScheme());
+				return schemeForwardedLocation.toUriString();
+			}
+
+			HttpRequest httpRequest = new ServletServerHttpRequest(request);
+			UriComponentsBuilder forwardedLocation = UriComponentsBuilder.fromHttpRequest(httpRequest);
+			boolean isRelativeToContextPath = location.startsWith(FOLDER_SEPARATOR);
+			if(isRelativeToContextPath) {
+				forwardedLocation.replacePath(request.getContextPath());
+			} else if(endsWithFileSpecificPart(forwardedLocation)) {
+				// remove a file specific part from existing request
+				forwardedLocation.path("/../");
+			}
+			forwardedLocation.path(location);
+			return forwardedLocation.build().normalize().toUriString();
+		}
+
+		private boolean endsWithFileSpecificPart(UriComponentsBuilder forwardedLocation) {
+			return !forwardedLocation.build().getPath().endsWith(FOLDER_SEPARATOR);
+		}
+
+		private boolean hasScheme(String location) {
+			String locationScheme = UriComponentsBuilder.fromUriString(location).build().getScheme();
+			return locationScheme != null;
+		}
+	}
 }
