@@ -44,7 +44,7 @@ public class RestTemplateTests {
 	@Test
 	public void redirectSlashSlashParentDotDotLogin() throws Exception {
 		ResponseEntity<String> result = redirectTo("//example.com/parent/../logout");
-		assertThat(result).hasRedirectOf("http://example.com/logout");
+		assertThat(result).hasRedirectOf("http://example.com/parent/../logout");
 	}
 
 	@Test
